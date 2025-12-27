@@ -4,7 +4,9 @@ on: [push, pull_request]
 
 jobs:
   build:
+
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v2
       - name: Set up JDK 11
@@ -14,45 +16,14 @@ jobs:
           distribution: 'adopt'
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
-
-      # 1. Запускаем приложение и сразу логируем его вывод, чтобы видеть ошибки
-      - name: Start SUT and wait
-        run: |
-          # Запускаем приложение в фоне, перенаправляя его вывод в файл для диагностики
-          java -jar ./artifacts/app-card-delivery.jar > app.log 2>&1 &
-          APP_PID=$!
-          echo "Приложение запущено с PID: $APP_PID"
-
-          # Даем время на базовую инициализацию
-          sleep 5
-
-          # Ожидаем, пока порт 9999 не станет доступен (максимум 30 секунд)
-          echo "Ожидание готовности порта 9999..."
-          for i in {1..30}; do
-            # Пробуем установить TCP-соединение с портом
-            if timeout 1 bash -c "cat < /dev/null > /dev/tcp/localhost/9999" 2>/dev/null; then
-              echo "✅ Порт 9999 открыт! Приложение готово."
-              # Дополнительная проверка через HTTP
-              if curl -s -f http://localhost:9999 > /dev/null; then
-                echo "✅ HTTP-сервер отвечает."
-                break
-              fi
-            fi
-            echo "Попытка $i/30: порт ещё не готов..."
-            sleep 1
-          done
-
-          # Если цикл завершился, а порт не открылся, покажем логи и завершимся с ошибкой
-          if ! timeout 1 bash -c "cat < /dev/null > /dev/tcp/localhost/9999" 2>/dev/null; then
-            echo "❌ Ошибка: Приложение не запустилось за отведенное время."
-            echo "=== Логи приложения ==="
-            cat app.log
-            kill $APP_PID 2>/dev/null || true
-            exit 1
-          fi
-          # Оставляем приложение работать в фоне
-          wait $APP_PID &
-
-      # 2. Запускаем тесты
+      - name: Start SUT
+        # Запускаем SUT,
+        # имя файла SUT будет отличаться в каждой задаче.
+        # & означает, что в фоновом режиме не блокируем терминал для запуска тестов,
+        # обязательно должен быть для запуска SUT в CI
+        run: java -jar ./artifacts/app-mbank.jar &
       - name: Build with Gradle
-        run: ./gradlew test -Dselenide.headless=true --info
+        # Запускаем автотесты
+        # Для проектов на базе Selenide необходимо добавить параметр для запуска браузера
+        # в headless режиме -Dselenide.headless=true, параметр --info должен остаться
+        run: ./gradlew test --info
