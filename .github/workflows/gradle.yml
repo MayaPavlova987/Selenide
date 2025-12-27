@@ -4,9 +4,7 @@ on: [push, pull_request]
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v2
       - name: Set up JDK 11
@@ -14,16 +12,52 @@ jobs:
         with:
           java-version: '11'
           distribution: 'adopt'
+
+      # 🔥 ВАЖНО: Добавьте этот новый шаг для установки Chrome
+      - name: Set up Chrome and ChromeDriver
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y wget unzip
+          # Устанавливаем Chrome
+          wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
+          echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" | sudo tee /etc/apt/sources.list.d/google-chrome.list
+          sudo apt-get update
+          sudo apt-get install -y google-chrome-stable
+          # Проверяем версию Chrome
+          google-chrome --version
+
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
-      - name: Start SUT
-        # Запускаем SUT,
-        # имя файла SUT будет отличаться в каждой задаче.
-        # & означает, что в фоновом режиме не блокируем терминал для запуска тестов,
-        # обязательно должен быть для запуска SUT в CI
-        run: java -jar ./artifacts/app-mbank.jar &
+
+      - name: Start SUT and wait
+        run: |
+          # Запускаем приложение в фоне
+          java -jar ./artifacts/app-card-delivery.jar > app.log 2>&1 &
+          APP_PID=$!
+          echo "Приложение запущено с PID: $APP_PID"
+
+          # Ждем запуска порта
+          echo "Ожидание готовности порта 9999..."
+          for i in {1..30}; do
+            if timeout 1 bash -c "cat < /dev/null > /dev/tcp/localhost/9999" 2>/dev/null; then
+              echo "✅ Порт 9999 открыт! Приложение готово."
+              if curl -s -f http://localhost:9999 > /dev/null; then
+                echo "✅ HTTP-сервер отвечает."
+                break
+              fi
+            fi
+            echo "Попытка $i/30: порт ещё не готов..."
+            sleep 1
+          done
+
+          if ! timeout 1 bash -c "cat < /dev/null > /dev/tcp/localhost/9999" 2>/dev/null; then
+            echo "❌ Ошибка: Приложение не запустилось за отведенное время."
+            echo "=== Логи приложения ==="
+            cat app.log
+            kill $APP_PID 2>/dev/null || true
+            exit 1
+          fi
+          wait $APP_PID &
+
       - name: Build with Gradle
-        # Запускаем автотесты
-        # Для проектов на базе Selenide необходимо добавить параметр для запуска браузера
-        # в headless режиме -Dselenide.headless=true, параметр --info должен остаться
-        run: ./gradlew test --info
+        run: ./gradlew test -Dselenide.headless=true --info
