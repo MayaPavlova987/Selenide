@@ -13,7 +13,7 @@ jobs:
           java-version: '11'
           distribution: 'adopt'
 
-      # 🔥 ВАЖНО: Добавьте этот новый шаг для установки Chrome
+
       - name: Set up Chrome and ChromeDriver
         run: |
           sudo apt-get update
